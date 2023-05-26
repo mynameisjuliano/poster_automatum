@@ -1,1 +1,0 @@
-char* make_post_content(struct *item item);
