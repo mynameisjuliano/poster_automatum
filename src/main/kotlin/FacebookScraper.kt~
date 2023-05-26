@@ -1,0 +1,575 @@
+import collage.Collage
+import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
+import internals.Constants
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileNotFoundException
+import java.io.FileReader
+import java.io.FileWriter
+import java.lang.Exception
+import java.lang.NumberFormatException
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Scanner
+import java.util.regex.Pattern
+import javax.imageio.ImageIO
+import kotlin.math.abs
+
+class FacebookScraper {
+    companion object {
+        /** The object that encapsulates the data used for posting for Facebook.
+         * Most of the time, it will just inherit data from PostInfo. Its purpose
+         * is to differentiate two functions with different nuances and purposes.
+         */
+        public class PostInfoFinal() : PostInfo() {
+            constructor(id: String, message: String, attachments: List<String>) : this() {
+                this.id = id
+                this.message = message
+                this.attachments.addAll(attachments)
+            }
+        }
+        /** The class that is used to encapsulate the data parsed from the input
+         * files of links. It's here for that only very reason.
+          */
+        public class PostInfoObject {
+            var link = ""
+            var name : String? = null
+            var price : String? = null
+            var size : String? = null
+            var caption : String? = null
+            @SerializedName("my_day_caption")
+            var myDayCaption : String? = null
+	    @SerializedName("size_in_my_day")
+	    var sizeInMyDay : Boolean = false
+	    @SerializedName("force_installment")
+	    var forceInstallment : Boolean = false
+            var type = Item.Companion.Type.DEFAULT
+            var attachments : Array<String>? = null
+            var columns : Int = 0 /* 0 means you let the program handle the columns */
+	    @SerializedName("adjust_image")
+	    var adjustImage : Boolean = false
+            var split : Boolean ? = null /* Forgot what this variable does */
+        }
+
+        /** As the name implies, it is used for capturing the JSON data response gathered from
+         * asking for a page access token from Facebook Graph API .
+         */
+        public class AccessTokenResponse {
+            @SerializedName("access_token")
+            var accessToken = ""
+
+        }
+
+        // TODO: Post the JSON structure of a post!
+        /** This one heavy data of a class is used to gather information from
+         * a post that is requested from Facebook's Graph API. Each member will have
+         * an explanation, if necessary.
+         * The JSON is structured like this:
+         * {"id":[PAGE_ID],
+         * "message":[CONTENT],
+         * "attachments":[{}]
+         */
+        class FacebookPostDataResponse {
+            /* Post's story_fbid, which is basically the Post's ID, used in conjunction
+            * with a page's ID, i.e.: ${PAGE_ID}_${STORY_FBID}
+             */
+            var id : String? = null
+            /* The text content of a post */
+            var message : String = ""
+            /* The JSON class of data of attachments */
+            var attachments : Attachments? = null
+
+            companion object {
+                /* The second-highest level of a Facebook post response structure */
+                class Attachments {
+                    var data = ArrayList<AttachmentData>()
+                }
+
+                /* Third-level data structure in a Facebook post response structure */
+                class AttachmentData {
+                    var media : Media? = null
+                    var subattachments : SubAttachments? = null
+                }
+
+                /* Multiple-upload photo posts have the key "subattachments" in their objects.
+                * This is the class for it
+                 */
+                class SubAttachments {
+                    var data = ArrayList<SubAttachmentData>()
+                }
+
+                /* Fourth-level structure that contains the data of a "subattachment" key */
+                class SubAttachmentData {
+                    var media : Media? = null
+                }
+
+                /* Fifth-level structure that contains the majority of data of
+                 * a "subattachments[n]" key */
+                class Media {
+                    var image : Image? = null
+                }
+
+                /* Deepest-level class for the information about an attachment (e.g. photo)
+                * of a post. It contains some photo metadata and their important link.
+                 */
+                class Image {
+                    var width = 0
+                    var height = 0
+                    var src : String = ""
+                }
+            }
+        }
+
+        private class IdResponse {
+            var id = ""
+        }
+
+        /* An encapsulated object of the processed information gathered from a Facebook post's
+        * JSON response. It contains the key data to make a post and process it
+         */
+        open class PostInfo() {
+            var id : String = ""
+            var message : String = ""
+            var attachments : ArrayList<String> = ArrayList<String>();
+
+            constructor(postInfo : PostInfo) : this() {
+                this.id = postInfo.id
+                this.message = postInfo.message
+                this.attachments = postInfo.attachments
+            }
+
+            constructor(id : String, message : String, attachments : List<String>) : this() {
+                this.id = id
+                this.message = message
+                this.attachments.addAll(attachments)
+            }
+
+            fun makeCopy() : PostInfo {
+                return PostInfo(this)
+            }
+        }
+
+        /* Generate an Item class data from the url, the additional parameters except @param accessToken is used for
+        * manual data substitution, mostly used whenever is reading data from the input file.
+         */
+        fun scrapeItemFromUrl(url : String, name : String?, price: String?, size : String?, caption : String?,
+                              myDayCaption : String?, sizeInMyDay : Boolean, forceInstallment : Boolean,
+			      type : String, accessToken : String) : Item {
+            /** Parse the story_fbid and (page) id from m.facebook.com url. */
+            val ids = WebUtils.getFacebookPostPageId(url, accessToken)
+            /** Parse the json then generate a PostInfo from it */
+            val postInfo : PostInfo = generatePostInfoFromJSON(WebUtils.getFacebookPostContent(ids, accessToken))
+
+            /** See the item format **/
+            val item = when(ids[Constants.FACEBOOK_PAGE_ID]) {
+                Item.Companion.Supplier.ANNA_CAI_BAGS ->
+                        processAnnaCaiBags(postInfo, name = name, price = price, size = size, caption = caption, type = type)
+                Item.Companion.Supplier.BEA_TAN_REYES_BAGS -> processBeaTanReyesBags(postInfo, name, price, size, caption, type)
+                Item.Companion.Supplier.DIANNE_SOTTO -> processDianneSotto(postInfo, name, price, size, caption, type)
+                else -> Item(name?: "", try { price?.toDouble() ?: 0.0 } catch (e : NumberFormatException) { 0.0 })
+			.setSize(size)
+			.setCaption(caption)
+			.setType(type)
+			.setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+            }
+
+	    item.setSizeInMyDay(sizeInMyDay)
+	    item.setForceInstallment(forceInstallment)
+
+	    item.myDayCaption = myDayCaption
+
+            return item
+        }
+
+
+        fun generateManualPost(name : String?, price : String?, size : String?, caption : String?,
+                               myDayCaption : String?, sizeInMyDay : Boolean, type : String, attachments : Array<String>?) : Item {
+            val realPrice = try {
+                price!!.toDouble()
+            } catch (e : Exception) {
+                0.0
+            }
+
+            if(name == null) println("Error: item has no @name")
+
+            return Item(name?: "" , realPrice)
+                .setSize(size)
+                .setType(type)
+                .setCaption(caption)
+                .setMyDayCaption(myDayCaption)
+                .addAttachments(attachments)
+		.setSizeInMyDay(sizeInMyDay)
+        }
+
+        private fun processAnnaCaiBags(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
+
+            val naPrice = if(price == null ) {
+                val priceMatcher = Pattern.compile("[Rs][Ss]\\s+([0-9]+)").matcher(postInfo.message)
+                priceMatcher.find()
+                priceMatcher.group(1)
+            } else {
+                price
+            }
+
+            val naSize = if(size == null) {
+                val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee]\\s?+:\\s?+(.*+)").matcher(postInfo.message)
+                sizeMatcher.find()
+                sizeMatcher.group(1)
+            } else {
+                size
+            }
+
+            val naName = name ?: /* Let's just assume that the name always resides in the 2nd (index = 1) line */
+            postInfo.message.split("\n")[1]
+
+            return Item(naName, naPrice.toDouble()).setSize(naSize.replace('*', 'x'))
+                .setCaption(caption)
+                .setType(if(type != Item.Companion.Type.DEFAULT) type else Item.Companion.Type.BAG_LOW_QUALITY)
+                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+        }
+
+        fun processBeaTanReyesBags(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
+            val naPrice = if(price == null) {
+                val priceMatcher = Pattern.compile(".+\\s?+:\\s?+([0-9]+)\\s?+[Oo][Nn][Ll][Yy]").matcher(postInfo.message)
+                priceMatcher.find()
+                priceMatcher.group(1)
+            } else {
+                price
+            }
+
+            val naSize = if(size == null) {
+                val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee]\\s?+:\\s?+(.*+)").matcher(postInfo.message)
+                sizeMatcher.find()
+                sizeMatcher.group(1).replace("inch", "") + " in"
+            } else {
+                size
+            }
+
+            return Item(name ?: "Bag", naPrice.toDouble()).setSize(naSize)
+                .setCaption(caption)
+                .setType(if(type != Item.Companion.Type.DEFAULT) type else Item.Companion.Type.BAG_HIGH_QUALITY)
+                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+        }
+
+        fun processDianneSotto(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
+            val naPrice = if (price == null) {
+	    	try {
+                	val priceMatcher =
+                    		Pattern.compile("\\s?+([0-9]+)\\s?+[Oo]?[Nn]?[Ll]?[Yy]?\\s?+").matcher(postInfo.message.trim())
+                	priceMatcher.find()
+                	priceMatcher.group(1)
+		} catch ( e : IllegalStateException ) {
+			println("Match not found ... defaulting to zero. Item: {${name?: "Household Item"}}")
+			"0.0"
+		}
+            } else {
+                price
+            }
+
+            val convertedPrice = naPrice.trim().toDouble()
+
+            return Item(name ?: "Household Item", convertedPrice).setSize(size)
+                .setCaption(caption)
+                .setType(if(type != Item.Companion.Type.DEFAULT) {
+                    type
+                } else {
+                    if(convertedPrice < 250)
+                        Item.Companion.Type.HOUSE_ITEM
+                    else
+                        Item.Companion.Type.CHEAP_HOUSE_ITEM
+                })
+                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+        }
+
+
+        fun processEllaShi(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
+            val naPrice = if(price == null) {
+                val priceMatcher = Pattern.compile("[Rr][Ss]\\s+([0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣]+)").matcher(postInfo.message)
+                priceMatcher.find()
+                val raw = priceMatcher.group(1)
+                raw.forEach {
+                    val digit = it.digitToInt()
+                    println(digit)
+                }
+                "100"
+            } else {
+                price
+            }
+
+            return Item(name ?: "Household Item", naPrice.toDouble()).setSize(size)
+                .setCaption(caption)
+                .setType(if(type != Item.Companion.Type.DEFAULT) type else Item.Companion.Type.HOUSE_ITEM)
+                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+        }
+
+            /** Just generates some raw data from the JSON response from the Graph API for
+         * the method scrapeItemFromUrl() to use
+         **/
+        fun generatePostInfoFromJSON(json : String) : PostInfo {
+            val postInfo = PostInfo()
+            val jsonResponse = Gson().fromJson(json, FacebookPostDataResponse::class.java)
+
+            postInfo.message = jsonResponse.message
+            postInfo.id = jsonResponse.id!!
+
+            if(jsonResponse.attachments?.data?.get(0)?.subattachments != null) {
+                jsonResponse.attachments?.data?.get(0)?.subattachments?.data?.forEach { it ->
+                    postInfo.attachments.add(it.media?.image?.src!!)
+                }
+            } else {
+                jsonResponse.attachments?.data?.forEach { it -> postInfo.attachments.add(it.media?.image?.src!!) }
+            }
+
+            return postInfo
+        }
+
+        fun makeFacebookPost(attachments : List<String>, postContent : String,
+		pageId : String, accessToken : String) : String {
+
+            val photos = arrayListOf<IdResponse>()
+            var attachmentData = ""
+            var count = 0
+
+            attachments.forEach { photo ->
+                /* Let us post the photos first before gathering it in */
+
+	        /* If the file is local, upload the photo somewhere first
+	        * Looks like Facebook allows direct upload using some sort of MIME trickery.
+	        * For now I can't really do this, as it will require some studying, but as for
+	        * reference, I will be putting the links here.
+	        * Facebook API documentation ref: https://developers.facebook.com/docs/graph-api/reference/page/photos/
+	        * w3 forms reference: https://www.w3.org/TR/html401/interact/forms.html#h-17.13.4.2
+	        */
+
+                val response = WebUtils.getStringFromHttp(
+                    "https://graph.facebook.com/"
+                            + "${pageId}/photos?"
+                            + "url=${photo.replace("&", "%26")}&" // Since the url could not be accessed without the queries :)
+                            + "published=false&"
+                            + "access_token=${accessToken}", "POST"
+                )
+
+                val photoResponse = Gson().fromJson(response, IdResponse::class.java)
+
+                photos.add(photoResponse)
+
+                if (count > 0) {
+			attachmentData += "&" // a seperator
+		}
+
+                attachmentData += "attached_media[${count}]={\"media_fbid\":${photoResponse.id}}"
+
+		count++
+            }
+
+            /* Now let us make the post! */
+	    val postResponse = WebUtils.getStringFromHttp(
+                "https://graph.facebook.com/"
+                	+ "${pageId}/feed?"
+                	+ "message=${URLEncoder.encode(postContent, "UTF-8")}&"
+                	+ "${attachmentData}&"
+                	+ "access_token=${accessToken}", "POST")
+
+            return Gson().fromJson(postResponse, IdResponse::class.java).id
+        }
+
+	fun createMyDayStory(item : Item, adjustImage : Boolean, attachments : List<String>, font : String, columns : Int) {
+		println("###: Making 'My Day' image for '${item.name}'")
+		/* Let us first download the files */
+                attachments.forEach { url ->
+                    val name = url.split("?")[0].reversed().split('/')[0].reversed()
+
+		    /** 'file://' protocol means local, so there you go! **/
+                    val destination = if(url.startsWith("file://")) {
+			val path = url.substring("file://".length - 1)
+
+			File(path)
+		    } else {
+                        val destFile = File("${Constants.HOME}/${Constants.CACHE_WORKSPACE}/${item.data.id}/${name}")
+
+			/** The latter conditional just checks if the file isn't empty **/
+		    	if(destFile.exists() && destFile.length() < 1) {
+				destFile.delete()
+		    	}
+
+                    	if (!destFile.exists()) {
+				try {
+                       			WebUtils.saveFileFromHttp(url, destFile)
+				} catch (e : Exception) {
+					e.printStackTrace();
+				}
+			}
+
+			destFile
+		    }
+
+		    val image = ImageIO.read(destination)
+
+                    if(image != null) {
+		    	item.images.add(image)
+		    } else {
+			println("Path '${url}' can't be accessed, skipping image...")
+		    }
+                }
+
+                val date = SimpleDateFormat("MM-dd-YYYY-HH-mm-ss").format(Date())
+
+		val itemId = if (item.data.id == "" || item.data.id == Constants.NO_ID) {
+		    abs(item.getMessageContent().hashCode())
+		} else {
+		   item.data.id
+		}
+
+                val destFile = File(Constants.HOME,
+                    "${Constants.RESULTS_WORKSPACE}/${item.length}_weeks-${item.type}-${date}-${itemId}.png"
+                )
+
+                if (!destFile.exists()) {
+                    destFile.parentFile.mkdirs()
+                    destFile.createNewFile()
+		}
+
+                val collage = Collage.createStoryFromItem(item, adjustImage, font, columns)
+
+                ImageIO.write(collage, "png", destFile)
+
+		item.images.forEach { image ->
+		    image.flush()
+		}
+
+                collage.flush()
+	}
+
+        fun getExtendedPageAccessToken(appId : String, appSecret : String, userAccessToken : String) : String {
+            return WebUtils.getStringFromHttp("https://graph.facebook.com/oauth/access_token?" +
+                "grant_type=fb_exchange_token&" +
+                "client_id=${appId}&" +
+		"client_secret=${appSecret}&" +
+                "fb_exchange_token=${userAccessToken}", "GET")
+        }
+
+        fun getPageAccessToken(pageId : String, userAccessToken : String) : String {
+            return Gson().fromJson(WebUtils.getStringFromHttp("https://graph.facebook.com/${pageId}?" +
+                    "fields=access_token&" +
+                    "access_token=${userAccessToken}", "GET"),
+                AccessTokenResponse::class.java).accessToken
+        }
+
+	fun parseInputFilesToUpload(inputFile : File, pageId : String, disablePost : Boolean, disableImageGen : Boolean, font : String, offline : Boolean, accessToken : String) {
+	     println("Processing input file: '${inputFile.absolutePath}'")
+
+
+	    if(offline) {
+		println("WARNING: You are trying to post while the offline flag (-o) is on. Only the manual posts will be debugged.")
+	    }
+
+            var jsonContent = ""
+            val scanner = Scanner(FileReader(inputFile)).useDelimiter("//A")
+            while(scanner.hasNext()) {
+                jsonContent += scanner.next()
+            }
+
+	    parseJsonToUpload(jsonContent, pageId, disablePost, disableImageGen, font, offline, accessToken)
+	}
+
+        /* This is the method that parse an input file that contains the JSON of supplier's items.
+        * @param file, is the file from which to be parsed
+        * @param pageId is the pageId of the page to be posted on, (requires a valid page access token)
+        * @param isMock, if the post should not be posted but only simulated. (Will still generate images though)
+        * @param accessToken is the access token that will be used in the posting.
+        * */
+        fun parseJsonToUpload (json : String, pageId : String, disablePost : Boolean, disableImageGen : Boolean, font : String, offline : Boolean, accessToken : String) {
+	    val posts = Gson().fromJson(json, Array<PostInfoObject>::class.java) ?: return
+
+            /* To save the ID for deletion */
+            val file = File(Constants.HOME, Constants.POST_LIST)
+
+            if(!file.exists()) {
+                file.parentFile.mkdirs()
+                file.createNewFile()
+            }
+
+            posts.forEach {
+                try {
+                    var item : Item? = null
+
+		    var manual = it.link == "" || it.link == null
+		    if (!manual) {
+			try {
+				if(!offline) {
+                       			item = scrapeItemFromUrl(it.link, it.name, it.price,
+                       		    		it.size, it.caption, it.myDayCaption, it.sizeInMyDay,
+				    		it.forceInstallment, it.type, accessToken = accessToken)
+			    	} else {
+					println("WARNING: You are trying to post while the offline flag (-o) is on. Ignoring link. Not scraping anything.")
+				}
+			} catch (ioe : Exception) {
+				println("Link '${it.link}' can not be reached. Turning to manual posting.")
+				item = generateManualPost(it.name, it.price, it.size,
+                            		it.caption, it.myDayCaption, it.sizeInMyDay, it.type, it.attachments)
+			}
+
+                    } else {
+                        item = generateManualPost(it.name, it.price, it.size,
+                            it.caption, it.myDayCaption, it.sizeInMyDay, it.type, it.attachments)
+                    }
+
+		    val shouldPost = item != null
+
+		    if(shouldPost && offline && manual) {
+			println("Manual post's message content: ${item?.getMessageContent()}")
+		    }
+
+		    if(shouldPost && !disablePost && !offline) {
+                    	println("Posting Post[POST_ID]: \"${item?.name}\"")
+		    	val id = makeFacebookPost(item?.data?.attachments!!, item.getMessageContent()!!,
+                   	    pageId, accessToken)
+                    	println("Item posted successfully. POST_ID: \"${id}\"")
+		    }
+
+		    if(shouldPost && !disableImageGen && !offline) {
+			createMyDayStory(item!!, it.adjustImage, item.data?.attachments!!, font, it.columns)
+		    }
+
+                } catch ( e : Exception ) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        fun deleteAllAutomaticPost(pageId : String, accessToken : String) {
+            val file = File(Constants.HOME, Constants.POST_LIST)
+            try {
+                val scanner = Scanner(FileInputStream(file)).useDelimiter("\\A")
+                scanner.forEach {
+                    val url = "https://graph.facebook.com/${pageId}_${it}?access_token=${accessToken}"
+                    println("Deleting: '$url'")
+                    WebUtils.getStringFromHttp(url, "DELETE")
+                }
+
+                // Let's remove the contents afterwards and then refresh it.
+                file.delete()
+                file.createNewFile()
+            } catch (e : FileNotFoundException) {
+                // Welp, there's not much to do when the file is not found, let's just create it then.
+                file.parentFile.mkdirs()
+                file.createNewFile()
+            }
+        }
+
+        fun deleteFacebookPost(url : String, accessToken: String) {
+            WebUtils.deletePost(url, accessToken)
+        }
+
+        fun shareAPost(postURL : String, groupId : String, message : String, accessToken : String) : String {
+            return WebUtils.getStringFromHttp("https://graph.facebook.com/${groupId}/feed?" +
+                    "link=${postURL}" +
+                    "&message=${URLEncoder.encode(message, "UTF-8")}" +
+                    "&access_token=${accessToken}", "POST")
+        }
+
+    }
+
+}
