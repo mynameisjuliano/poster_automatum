@@ -473,7 +473,7 @@ class Collage {
 				if(i == ' ' || i == '-' || i == ',' || i == '\t' ||
 					i == '\n' || currentIndex == line.length) {
 					if(currentIndex > maxWidth) {
-						val part_i =  line.substring(0, if(lastSeperatorIndex < 1) currentIndex - 1 else lastSeperatorIndex - 1)
+						val part_i =  line.substring(0, if(lastSeperatorIndex < 1) currentIndex - 1 else lastSeperatorIndex)
 						val part_ii = line.substring(if(lastSeperatorIndex < 1) currentIndex + 1 else lastSeperatorIndex + 1, line.length)
 						/* println("seperator: [" + i + "],\n\tpart_i: [$part_i],\n\tpart_ii: [$part_ii]," +
 							"\n\tcurrentIndex: [$currentIndex],\n\tlastSeparator: [$lastSeperatorIndex]") */
@@ -510,7 +510,7 @@ class Collage {
 					val cutString = cutStringToWidth(line, MAX_CHAR_WIDTH)
 					for(x in 0..cutString.size - 1) {
 						buffer.append(cutString[x])
-						if(i < split.size - 1) buffer.append("\n")
+						if(i < split.size) buffer.append("\n")
 					}
 			      }
 
