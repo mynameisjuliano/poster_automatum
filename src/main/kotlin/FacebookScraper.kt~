@@ -168,10 +168,8 @@ class FacebookScraper {
                         processAnnaCaiBags(postInfo, name = name, price = price, size = size, caption = caption, type = type)
                 Item.Companion.Supplier.BEA_TAN_REYES_BAGS -> processBeaTanReyesBags(postInfo, name, price, size, caption, type)
                 Item.Companion.Supplier.DIANNE_SOTTO -> processDianneSotto(postInfo, name, price, size, caption, type)
-                else -> Item(name?: "", try { price?.toDouble() ?: 0.0 } catch (e : NumberFormatException) { 0.0 })
-			.setSize(size)
-			.setCaption(caption)
-			.setType(type)
+		Item.Companion.Supplier.KK_STORE -> processKkStore()
+                else -> Item("", 0.0)
 			.setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
             }
 
@@ -179,22 +177,20 @@ class FacebookScraper {
 	    item.setForceInstallment(forceInstallment)
 
 	    item.myDayCaption = myDayCaption
-
             return item
         }
 
 
         fun generateManualPost(name : String?, price : String?, size : String?, caption : String?,
                                myDayCaption : String?, sizeInMyDay : Boolean, type : String, attachments : Array<String>?) : Item {
-            val realPrice = try {
-                price!!.toDouble()
-            } catch (e : Exception) {
-                0.0
-            }
-
             if(name == null) println("Error: item has no @name")
 
-            return Item(name?: "" , realPrice)
+            return Item(name?: "" , try {
+                price!!.toDouble()
+            } catch (nfe : NumberFormatException) {
+                println("An manual post has an invalid supplier price. \$name = ${name}")
+		exitProcess(1)
+            })
                 .setSize(size)
                 .setType(type)
                 .setCaption(caption)
@@ -203,106 +199,75 @@ class FacebookScraper {
 		.setSizeInMyDay(sizeInMyDay)
         }
 
-        private fun processAnnaCaiBags(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
-
-            val naPrice = if(price == null ) {
-                val priceMatcher = Pattern.compile("[Rs][Ss]\\s+([0-9]+)").matcher(postInfo.message)
-                priceMatcher.find()
-                priceMatcher.group(1)
-            } else {
-                price
-            }
-
-            val naSize = if(size == null) {
-                val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee]\\s?+:\\s?+(.*+)").matcher(postInfo.message)
-                sizeMatcher.find()
-                sizeMatcher.group(1)
-            } else {
-                size
-            }
-
-            val naName = name ?: /* Let's just assume that the name always resides in the 2nd (index = 1) line */
-            postInfo.message.split("\n")[1]
-
-            return Item(naName, naPrice.toDouble()).setSize(naSize.replace('*', 'x'))
-                .setCaption(caption)
-                .setType(if(type != Item.Companion.Type.DEFAULT) type else Item.Companion.Type.BAG_LOW_QUALITY)
-                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
-        }
-
-        fun processBeaTanReyesBags(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
-            val naPrice = if(price == null) {
-                val priceMatcher = Pattern.compile(".+\\s?+:\\s?+([0-9]+)\\s?+[Oo][Nn][Ll][Yy]").matcher(postInfo.message)
-                priceMatcher.find()
-                priceMatcher.group(1)
-            } else {
-                price
-            }
-
-            val naSize = if(size == null) {
-                val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee]\\s?+:\\s?+(.*+)").matcher(postInfo.message)
-                sizeMatcher.find()
-                sizeMatcher.group(1).replace("inch", "") + " in"
-            } else {
-                size
-            }
-
-            return Item(name ?: "Bag", naPrice.toDouble()).setSize(naSize)
-                .setCaption(caption)
-                .setType(if(type != Item.Companion.Type.DEFAULT) type else Item.Companion.Type.BAG_HIGH_QUALITY)
-                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
-        }
-
-        fun processDianneSotto(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
-            val naPrice = if (price == null) {
-	    	try {
-                	val priceMatcher =
-                    		Pattern.compile("\\s?+([0-9]+)\\s?+[Oo]?[Nn]?[Ll]?[Yy]?\\s?+").matcher(postInfo.message.trim())
-                	priceMatcher.find()
-                	priceMatcher.group(1)
-		} catch ( e : IllegalStateException ) {
-			println("Match not found ... defaulting to zero. Item: {${name?: "Household Item"}}")
-			"0.0"
+        private fun processAnnaCaiBags(postInfo : PostInfo) : Item {
+		val priceMatcher = Pattern.compile("[Rs][Ss]\\s+([0-9]+)").matcher(postInfo.message)
+		priceMatcher.find()
+		val price = try {
+			priceMatcher.group(1).toDouble()
+		} catch (nfe : NumberFormatException) {
+			println("An 'anna cai bag' item has no normal formatted price. Depending on manual input");
+			0
 		}
-            } else {
-                price
-            }
+                val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee]\\s?+:\\s?+(.*+)").matcher(postInfo.message)
+                sizeMatcher.find()
+                val size = sizeMatcher.group(1)
 
-            val convertedPrice = naPrice.trim().toDouble()
+            	val name = postInfo.message.split("\n")[1] ? : "👜 Bag 👜"
 
-            return Item(name ?: "Household Item", convertedPrice).setSize(size)
-                .setCaption(caption)
-                .setType(if(type != Item.Companion.Type.DEFAULT) {
-                    type
-                } else {
-                    if(convertedPrice < 250)
-                        Item.Companion.Type.HOUSE_ITEM
-                    else
-                        Item.Companion.Type.CHEAP_HOUSE_ITEM
-                })
-                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+		return Item(name, price.toDouble()).setSize(size.replace('*', 'x'))
+                	.setType(Item.Companion.Type.BAG_LOW_QUALITY)
         }
 
-
-        fun processEllaShi(postInfo : PostInfo, name : String?, price: String?, size: String?, caption : String?, type : String) : Item {
-            val naPrice = if(price == null) {
-                val priceMatcher = Pattern.compile("[Rr][Ss]\\s+([0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣]+)").matcher(postInfo.message)
+        fun processBeaTanReyesBags(postInfo : PostInfo) : Item {
+		val priceMatcher = Pattern.compile(".+\\s?+:\\s?+([0-9]+)\\s?+[Oo][Nn][Ll][Yy]").matcher(postInfo.message)
                 priceMatcher.find()
-                val raw = priceMatcher.group(1)
-                raw.forEach {
-                    val digit = it.digitToInt()
-                    println(digit)
-                }
-                "100"
-            } else {
-                price
-            }
+                val price = try {
+			priceMatcher.group(1).toDouble()
+		} catch (nfe : NumberFormatException) {
+			println("A 'bea tan reyes bags' item has no normal formatted price. Depending on manual input");
+			0
+		}
 
-            return Item(name ?: "Household Item", naPrice.toDouble()).setSize(size)
-                .setCaption(caption)
-                .setType(if(type != Item.Companion.Type.DEFAULT) type else Item.Companion.Type.HOUSE_ITEM)
-                .setPostInfoData(PostInfoFinal(postInfo.id, postInfo.message, postInfo.attachments))
+                val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee]\\s?+:\\s?+(.*+)").matcher(postInfo.message)
+                sizeMatcher.find()
+                val size = sizeMatcher.group(1).replace("inch", "") + " in"
+
+            return Item("👜 Bag 👜", price).setSize(naSize)
+                .setType(Item.Companion.Type.BAG_HIGH_QUALITY)
         }
+
+        fun processDianneSotto(postInfo : PostInfo) : Item {
+		val priceMatcher = Pattern.compile("\\s?+([0-9]+)\\s?+[Oo]?[Nn]?[Ll]?[Yy]?\\s?+").matcher(postInfo.message.trim())
+		priceMatcher.find()
+		val price = try {
+			priceMatcher.group(1).toDouble()
+		} catch ( nfe : NumberFormatException) {
+			println("A 'dianne sotto' item has no normal formatted price. Depending on manual input");
+			0
+		}
+
+		return Item("Household Item", price)
+                .setType(Item.Companion.Type.HOUSE_ITEM)
+        }
+
+	private fun processKkStore(postInfo : PostInfo) : Item {
+                val priceMatcher = Pattern.compile("[Oo][Nn][Ll][Yy]::\\s?+([0-9]+)").matcher(postInfo.message.trim())
+                priceMatcher.find()
+                val price = try {
+			priceMatcher.group(1).toDouble()
+		} catch ( nfe : NumberFormatException) {
+			println("A 'kk_store' item has no normal formatted price. Depending on manual input");
+			0
+		}
+
+		val sizeMatcher = Pattern.compile("[Ss][Ii][Zz][Ee][:]+\\s?+(.+)").matcher(postInfo.message)
+                sizeMatcher.find()
+                val size = sizeMatcher.group(1).replace("[Cc][Mm]", "") + " cm"
+
+		return Item("🏠 Cheap household item 💼", price)
+			.setSize(size)
+			.setType(Item.Companion.Type.CHEAP_HOUSE_ITEM)
+	}
 
             /** Just generates some raw data from the JSON response from the Graph API for
          * the method scrapeItemFromUrl() to use
@@ -422,18 +387,63 @@ class FacebookScraper {
 		   item.data.id
 		}
 
-                val destFile = File(Constants.HOME,
-                    "${Constants.RESULTS_WORKSPACE}/${item.length}_weeks-${item.type}-${date}-${itemId}.png"
-                )
+		// :: We'll be saving to JPEG now.
 
-                if (!destFile.exists()) {
-                    destFile.parentFile.mkdirs()
-                    destFile.createNewFile()
-		}
 
                 val collage = Collage.createStoryFromItem(item, adjustImage, font, columns)
+		val files = arrayOfNulls<File>(2)
 
-                ImageIO.write(collage, "png", destFile)
+		when(item.type) {
+			Item.Companion.Type.DEFAULT, Item.Companion.Type.CHEAP_HOUSE_ITEM,
+			Item.Companion.Type.HOUSE_ITEM -> {
+				val prepend = if(item.isCashOnly) {
+					"cash"
+				} else {
+					"${item.length}_weeks"
+				}
+
+				files[0] = File(Constants.HOME,
+                    "			${Constants.RESULTS_WORKSPACE}/${prepend}/"
+		    			+ "${prepend}-${item.type}-${date}-${itemId}.jpeg")
+			}
+			else -> {
+				val itemType = when(item.type) {
+					Item.Companion.Type.BAG_LOW_QUALITY,
+					Item.Companion.Type.BAG_HIGH_QUALITY -> "bags"
+					Item.Companion.Type.CLOTHES -> "clothes"
+					Item.Companion.Type.PHONE -> "phone"
+					Item.Companion.Type.SPEAKER -> "speaker"
+					Item.Companion.Type.SHOES_SLIPPERS -> "footwear"
+					else -> item.type
+				}
+
+				val prepend = if(item.isCashOnly) {
+					"cash"
+				} else {
+					"${item.length}_weeks"
+				}
+
+				files[0] = File(Constants.HOME,
+                    			"${Constants.RESULTS_WORKSPACE}/${itemType}/"
+					+ "${prepend}-${item.type}-${date}-${itemId}.jpeg")
+				if(item.isCashOnly) {
+					files[1] = File(Constants.HOME,
+                    			"${Constants.RESULTS_WORKSPACE}/cash/${prepend}-"
+					+ "${item.type}-${date}-${itemId}.jpeg")
+				}
+			}
+		}
+
+		files.forEach{ file ->
+			if(file != null) {
+                		if (!file!!.exists()) {
+					file!!.parentFile.mkdirs()
+                    			file!!.createNewFile()
+				}
+
+                		ImageIO.write(collage, "jpeg", file!!)
+			}
+		}
 
 		item.images.forEach { image ->
 		    image.flush()
@@ -496,6 +506,7 @@ class FacebookScraper {
                     var item : Item? = null
 
 		    var manual = it.link == "" || it.link == null
+
 		    if (!manual) {
 			try {
 				if(!offline) {

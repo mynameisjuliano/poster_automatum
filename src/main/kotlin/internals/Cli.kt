@@ -20,11 +20,14 @@ class Cli {
         val S_METADATA_FILE = 'm'
         val L_METADATA_FILE = "metadata-file"
 
-        val S_DISABLE_POST = 'p'
+        val S_DISABLE_POST = 'n'
         val L_DISABLE_POST = "disable-post"
 
         val S_DISABLE_IMAGE = 'g'
         val L_DISABLE_IMAGE = "disable-image"
+
+        val S_DEBUG = 'b'
+        val L_DEBUG = "debug"
 
         val S_DELETE_POST = 'd'
         val L_DELETE_POST = "delete-post"

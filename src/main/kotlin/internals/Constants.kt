@@ -8,9 +8,13 @@ class Constants {
 
         val HOME = File(System.getProperty("user.home"))
 
-        const val CACHE_WORKSPACE = ".cache/fb"
-        const val RESULTS_WORKSPACE = "Pictures/My Day Results/"
-        const val POST_LIST = ".cache/auto_poster/post_list.data"
+	/* TODO: Move the image cache files to the new directory, also
+	* update the file pointers in @{link FacebookScraper.kt}*/
+        val CACHE_WORKSPACE = "${HOME}/.cache/fb"
+        val IMG_CACHE_WORKSPACE = "${HOME}/.cache/fb/image_cache"
+        val POSTED_DB = "${HOME}/.local/share/fb/posted"
+        val RESULTS_WORKSPACE = "${HOME}/Pictures/My Day Results/"
+        val POST_LIST = "${CACHE_WORKSPACE}/auto_poster/post_list.data"
 
         const val NO_ID = "N/A"
 

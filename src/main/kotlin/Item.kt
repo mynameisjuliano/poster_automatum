@@ -20,29 +20,36 @@ class Item {
 
 	/* array to have the name */
         class Supplier {
-            companion object {
-                val ANNA_CAI_BAGS =      "100063763044968"// "👜 Anna Cai Bags"]
-                val BEA_TAN_REYES_BAGS = "100057227688584"// "👜 Bea Tan Reyes Bags"]
-                val DIANNE_SOTTO =       "100064897175497"// "Dianne Sotto"]
-
-		/* : Just hardcode this bruh!, or use some sort of script. */
-		fun getName(id : String) {
-			when(id) {
-
-			}
+		companion object {
+			val ANNA_CAI_BAGS =      "100063763044968"// "👜 Anna Cai Bags"]
+			val ANNA_CAI_BAGS_I =    "100087072821516"
+			val BEA_TAN_REYES_BAGS = "100057227688584"// "👜 Bea Tan Reyes Bags"]
+			val DIANNE_SOTTO =       "100064897175497"// "Dianne Sotto"]
+			val KK_STORE = 		 "100057183110957"
+			val WANG_STORE =         "100064875485080"
+			val WANG_BAGS =          "100093492876308"
+			val LISA_SY =            "100057411379525"
 		}
-            }
-        }
-    }
+	}
+     }
 
     /* Meta-data related variables */
-    var name : String
+    var name : String? = null
     var caption : String? = null
+    var captionInMyDay = false
     var myDayCaption : String? = null
     /* Pay attention to this when parsing. TODO: Implement this. */
-    var size : String ? = null
-    var sizeInMyDay : Boolean = false
-    var forceInstallment : Boolean = false
+    var size : String? = null
+    var pieces : String? = null
+    var piecesInMyDay = true
+    var sizeInMyDay = false
+    var noDesign = false
+    var colors = arrayListOf<String>()
+    var designs = arrayListOf<String>()
+    var includes = arrayListOf<String>()
+    var colorsInMyDay = true
+    var designsInMyDay = true
+    var includesInMyDay = true
     var type = Type.DEFAULT
     var isCashOnly = false
 
@@ -53,9 +60,17 @@ class Item {
     var length = 0
     var cash = 0.0
 
+    /* initialization and cache */
+    private var initialized = false
+    private var messageContent = ""
+
     /* Data-related variables */
-    var data : FacebookScraper.Companion.PostInfoFinal = FacebookScraper.Companion.PostInfoFinal()
+    var data : FacebookScraper.Companion.PostInfo? = null
     var images = arrayListOf<BufferedImage>()
+
+    constructor() {
+
+    }
 
     constructor(name : String, supplierPrice : Double) {
         this.name = name
@@ -79,7 +94,15 @@ class Item {
             else supplierPrice) * downPaymentRate
         )
 
-        if(supplierPrice <= 170 && !forceInstallment) {
+	if(type == Type.HOUSE_ITEM || type == Type.CHEAP_HOUSE_ITEM) {
+		if(supplierPrice < 250) {
+			type = Type.CHEAP_HOUSE_ITEM
+		} else {
+			type = Type.HOUSE_ITEM
+		}
+	}
+
+        if(supplierPrice <= 170) {
         	isCashOnly = true
         } else {
 		isCashOnly = false
@@ -116,9 +139,12 @@ class Item {
         }
 
         cash = estimatedCash
+	updateMessageContent()
+
+	initialized = true
     }
 
-    fun getMessageContent() : String {
+    fun updateMessageContent() {
         val message = StringBuilder()
 
         if (type == Type.BAG_HIGH_QUALITY) {
@@ -132,18 +158,59 @@ class Item {
             )
 
         if(caption != null) message.append("${caption}\n")
+        if(pieces != null) {
+		message.append("#️⃣ ${pieces!!} ${try {
+			if(pieces!!.toInt() > 1) {
+				"PCs"
+			} else {
+				"PC"
+			}
+		} catch (nfe : NumberFormatException) {
+			"PC(s)"
+		}}\n")
+	}
+        if(noDesign) message.append("❎ No choosing design ❎\n")
+
+	if(colors.size > 0) {
+		message.append("🌈 Available colors:\n")
+		colors.forEach { color ->
+			message.append("   $color\n")
+		}
+		message.append('\n')
+	}
+
+	if(designs.size > 0) {
+		message.append("🎀 Available designs:\n")
+		designs.forEach { designs ->
+			message.append("   $designs\n")
+		}
+		message.append('\n')
+	}
+
+	if(includes.size > 0) {
+		message.append("👉 Including:\n")
+		includes.forEach { item ->
+			message.append("   $item\n")
+		}
+		message.append('\n')
+	}
+
 
         if(isCashOnly) {
+		if(size != null) {
+                	message.append("\n📐 Size: $size")
+        	}
             message.append(String.format("\n\uD83D\uDCB5 Cash Only: P%,d\n", cash.toInt()))
         } else {
             message.append("\n✨ Installment Info ✨")
-            if(/*(type == Type.BAG_HIGH_QUALITY || type == Type.BAG_LOW_QUALITY) && */ size != null) {
-                message.append("\n📐 Size: $size")
-            }
+
             message.append(String.format("\n⬇️ Down: %,d", downPayment.toInt()))
                 .append(String.format("\n🪙 %,d/week", weeklyPayment.toInt()))
                 .append("\n🕒 $length weeks to pay")
                 .append(String.format("\n💵 Cash: %,d\n", cash.toInt()))
+	    if(size != null) {
+                message.append("📐 Size: $size\n")
+	    }
         }
 
 
@@ -154,16 +221,29 @@ class Item {
                        .append("\n✅ - Always refer sa latest post for updated prices")
         }
 
-        when (type) {
-            Type.CHEAP_HOUSE_ITEM, Type.HOUSE_ITEM -> message.append(
-                "\n\n✨ Para makapagpundar ng 'di nabibigatan, gawin nating hulugan. ✨"
-            )
-            Type.BAG_LOW_QUALITY, Type.BAG_HIGH_QUALITY, Type.SHOES_SLIPPERS, Type.CLOTHES -> message.append(
-                "\n\n✨ Mukang mayaman kahit nag hulugan 😉 ✨"
-            )
-        }
+	if(isCashOnly) {
+		message.append("\n\n✨ Items na abot kaya, pili kana 😉✨")
+	} else {
+        	when (type) {
+            		Type.CHEAP_HOUSE_ITEM, Type.HOUSE_ITEM -> message.append(
+                	"\n\n✨ Para makapagpundar ng 'di nabibigatan, gawin nating hulugan. ✨"
+            		)
+            		Type.BAG_LOW_QUALITY, Type.BAG_HIGH_QUALITY, Type.SHOES_SLIPPERS, Type.CLOTHES -> message.append(
+                	"\n\n✨ Mukang mayaman kahit nag hulugan 😉 ✨"
+            		)
+        	}
+	}
 
-        return message.toString()
+        messageContent = message.toString()
+    }
+
+    fun getMessageContent() : String {
+	if(!initialized) {
+		println("WARNING: an Item's getMessageContent() has been called without calling updateFromSupplierPrice()" +
+			"first.")
+	}
+
+	return messageContent
     }
 
     fun setType(type : String) : Item {
@@ -187,7 +267,12 @@ class Item {
         return this
     }
 
-    fun setPostInfoData(data : FacebookScraper.Companion.PostInfoFinal) : Item {
+    fun setCaptionInMyDay(captionInMyDay : Boolean) : Item {
+	    this.captionInMyDay = captionInMyDay
+	    return this
+    }
+
+    fun setPostInfoData(data : FacebookScraper.Companion.PostInfo) : Item {
        this.data = data
 
        return this
@@ -199,21 +284,27 @@ class Item {
 	return this
     }
 
-    fun setForceInstallment(forceInstallment : Boolean) : Item {
-	this.forceInstallment = forceInstallment
-
-	return this
-    }
-
     fun addAttachments(attachments : List<String>?) : Item {
-        if(attachments != null) data.attachments.addAll(attachments)
+        if(attachments != null) data?.attachments?.addAll(attachments)
         return this
     }
 
-    fun addAttachments(attachments : Array<String>?) : Item {
-        if(attachments != null) data.attachments.addAll(attachments)
+    fun addAttachments(attachments : ArrayList<String>?) : Item {
+        if(attachments != null) data?.attachments?.addAll(attachments)
 
         return this
     }
+
+    override fun hashCode() : Int {
+	var fullString = messageContent
+
+	if(data != null) {
+		for(str in data?.attachments!!) {
+			fullString += "\n" + str
+		}
+	}
+
+	return fullString.hashCode()
+     }
 
 }

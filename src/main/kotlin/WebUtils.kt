@@ -18,7 +18,7 @@ class WebUtils {
          * through the Graph API. The value contained in index 0 is the post's ID, in 1, the page's
          * ID.
          */
-        fun getFacebookPostPageId(url: String, accessToken: String): Array<String?> {
+        fun getFacebookPostPageId(url: String): Array<String?> {
             val ids = arrayOfNulls<String?>(2)
 
             for (query: String in URL(url).query.split("&")) {
@@ -49,8 +49,8 @@ class WebUtils {
         }
 
         /* postId is generated page-id_post-id */
-        fun deletePost(url : String, accessToken: String) {
-            val ids = getFacebookPostPageId(url, accessToken)
+        fun deletePost(url : String, accessToken: String) : String{
+            val ids = getFacebookPostPageId(url)
 
             val response = getStringFromHttp(
                 "https://graph.facebook.com/${ids[Constants.FACEBOOK_PAGE_ID]}_${ids[Constants.FACEBOOK_STORY_ID]}?fields=id&access_token=${accessToken}",
@@ -59,7 +59,7 @@ class WebUtils {
 
             val id = Gson().fromJson(response, IdCatcher::class.java).id
 
-            WebUtils.getStringFromHttp("https://graph.facebook.com/${id}?" +
+            return WebUtils.getStringFromHttp("https://graph.facebook.com/${id}?" +
                     "access_token=${accessToken}", "DELETE")
         }
 
@@ -71,8 +71,6 @@ class WebUtils {
                 file.parentFile.mkdirs()
                 file.createNewFile()
             }
-
-	    println(url);
             /* Save the byte to a file! */
             file.writeBytes(httpConnection.inputStream.readBytes())
         }

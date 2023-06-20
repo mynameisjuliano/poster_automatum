@@ -24,6 +24,7 @@ class Item {
                 val ANNA_CAI_BAGS =      "100063763044968"// "👜 Anna Cai Bags"]
                 val BEA_TAN_REYES_BAGS = "100057227688584"// "👜 Bea Tan Reyes Bags"]
                 val DIANNE_SOTTO =       "100064897175497"// "Dianne Sotto"]
+		val KK_STORe = "100057183110957"
 
 		/* : Just hardcode this bruh!, or use some sort of script. */
 		fun getName(id : String) {
@@ -130,10 +131,11 @@ class Item {
                 if(type == Type.PHONE) ". Refurbished unit.\uD83D\uDCF1\uD83D\uDCF1 No warranty mga frenny. ‼️\n"
                 else "\n"
             )
+
         if(caption != null) message.append("${caption}\n")
 
         if(isCashOnly) {
-            message.append(String.format("\n\uD83D\uDCB5 Cash Only: P%,d", cash.toInt()))
+            message.append(String.format("\n\uD83D\uDCB5 Cash Only: P%,d\n", cash.toInt()))
         } else {
             message.append("\n✨ Installment Info ✨")
             if(/*(type == Type.BAG_HIGH_QUALITY || type == Type.BAG_LOW_QUALITY) && */ size != null) {
@@ -142,11 +144,12 @@ class Item {
             message.append(String.format("\n⬇️ Down: %,d", downPayment.toInt()))
                 .append(String.format("\n🪙 %,d/week", weeklyPayment.toInt()))
                 .append("\n🕒 $length weeks to pay")
-                .append(String.format("\n💵 Cash: %,d", cash.toInt()))
+                .append(String.format("\n💵 Cash: %,d\n", cash.toInt()))
         }
 
+
         if(type == Type.DEFAULT || type == Type.HOUSE_ITEM || type == Type.PHONE) {
-            message.append(  "\n\n✅ - Free delivery(nearby areas)/meet up")
+            message.append(  "\n✅ - Free delivery(nearby areas)/meet up")
                        .append("\n✅ - Cash/gcash accepted")
                        .append("\n✅ - Goodpayer only please. 🤗")
                        .append("\n✅ - Always refer sa latest post for updated prices")

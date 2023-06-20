@@ -22,7 +22,11 @@ import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.min
+import kotlin.math.max
+import kotlin.math.round
 
 
 /* This is the class where I would be making my collage
@@ -37,6 +41,9 @@ class Collage {
           private const val GAPS = 15
           private const val IMG_SIZE = 500
 	  private const val SCALE_MULTIPLIER = 4f
+
+	  /* should I implement hypenation? */
+	  private const val MAX_CHAR_WIDTH = 18
 
 	  /*
           @JvmStatic
@@ -73,25 +80,83 @@ class Collage {
               }
           }
 */
+
           fun createStoryFromItem(item : Item, adjustImage : Boolean, font : String, columns : Int) : BufferedImage {
-              var text = item.myDayCaption?: ""
+              var text = StringBuilder()
 
-              if(text != "") text += '\n'
-
-	      if(item.sizeInMyDay) {
-	      	text += "📐 Size: ${item.size}\n"
+	      if(item.captionInMyDay) {
+		      appendLimitedTextToStringBuilder(item.caption!!, text)
+		      text.append('\n')
 	      }
 
-              text += if(item.isCashOnly) {
+	      if(item.myDayCaption != null) {
+		      appendLimitedTextToStringBuilder(item.myDayCaption!!, text)
+		      text.append('\n')
+	      }
+
+		if(item.piecesInMyDay && item.pieces != null) {
+			text.append("#️⃣ ${item.pieces} ${try {
+				if(item.pieces!!.toInt() > 1) {
+					"PCs"
+				} else {
+					"PC"
+				}
+			} catch (nfe : NumberFormatException) {
+				"PC(s)"
+			}}\n")
+		}
+	      if(item.sizeInMyDay && item.size != null) {
+	      		appendLimitedTextToStringBuilder("📐 Size: ${item.size}\n", text)
+	      }
+
+	       if(item.noDesign) {
+		       text.append("❎ No choosing design ❎\n")
+	       }
+
+	       if(item.colorsInMyDay) {
+			if(item.colors.size > 0) {
+				text.append("🌈 Available colors:\n")
+				item.colors.forEach { color ->
+					appendLimitedTextToStringBuilder("   $color\n", text)
+				}
+				text.append('\n')
+			}
+		}
+
+		if(item.designsInMyDay) {
+			if(item.designs.size > 0) {
+				text.append("🎀 Available designs:\n")
+				item.designs.forEach { design ->
+					/* TODO: VERY Experimental, consider not using it on
+					* text that couldn't really be expected to be long
+					* so time in testing won't be so long. (These are one
+					* of those */
+					appendLimitedTextToStringBuilder("   $design\n", text)
+				}
+				text.append('\n')
+			}
+		}
+
+		if(item.includesInMyDay) {
+			if(item.includes.size > 0) {
+				text.append("👉 Including:\n")
+				item.includes.forEach { i ->
+					appendLimitedTextToStringBuilder("   $i\n", text)
+				}
+				text.append('\n')
+			}
+		}
+
+              text.append(if(item.isCashOnly) {
                   String.format("💵 Cash: %,d", item.cash.toInt())
               } else {
                 String.format("\uD83D\uDC47 Down: %,d\n", item.downPayment.toInt()) +
                           String.format("\uD83D\uDCB0 %,d/weekly\n", item.weeklyPayment.toInt()) +
                           "\uD83D\uDD52 ${item.length.toInt()} weeks to pay\n" +
                           String.format("\uD83D\uDCB5 Cash: %,d", item.cash.toInt())
-              }
+              })
 
-              return makeCollage(item.images, adjustImage, text, font, GAPS, SCALE, columns)
+              return makeCollage(item.images, adjustImage, text.toString(), font, GAPS, SCALE, columns)
           }
 
           /* Automatically adjusts the width and height to make neat-looking pictures */
@@ -130,12 +195,7 @@ class Collage {
 	      /* For now, this is just we will do, the adjustImage variable in generateCollage is still work in
 	      * progress, so I have to make do with this for now that it will only work on single images with specific
 	      * dimensions */
-	      var collage = if(!adjustImage) {
-		      generateCollage(src, IMG_SIZE, IMG_SIZE, 15, columns, false)
-	      } else {
-		      generateCollage(src, src[0].width, src[0].height, 15, columns, true)
-	      }
-
+	      var collage = generateCollage(src, IMG_SIZE, IMG_SIZE, 15, columns, adjustImage)
 
               if(collage.width < 800 || collage.height < 800) {
                   val temp = BufferedImage((collage.width * SCALE_MULTIPLIER).toInt(), (collage.height * SCALE_MULTIPLIER).toInt(), BufferedImage.TYPE_4BYTE_ABGR)
@@ -148,35 +208,6 @@ class Collage {
 
                   collage = temp
               }
-
-              val text = getTextAsImage(collage, caption, gaps, scale, null, Color.BLACK, font)
-
-              /* Let's do maths! Compute like ratio of the image to fit the text in */
-              val rW = text.width.toFloat() / text.height.toFloat()
-
-	      val scale = if(rW < 4.0)
-	      			0.20
-			else
-				0.10
-
-              val tW = (collage.width * scale * rW).toInt()
-              val tH = (collage.width * scale).toInt()
-
-
-              /* Just a test */
-	      val cX = collage.width - tW - gaps * 2
-	      val cY = collage.height - tH - gaps * 2
-	      val cg = collage.graphics as Graphics2D
-              cg.drawImage(text, cX, cY, collage.width, collage.height, 0, 0, text.width, text.height, null)
-
-	      cg.color = Color.BLACK
-
-	      /* This sort of disappear when the image is too big */
-	      cg.stroke = BasicStroke(2.5f)
-	      cg.drawRect(cX, cY, collage.width - cX, collage.height - cY)
-
-	      cg.dispose()
-              text.flush()
 
 	      // :: I end up with large file sizes ....
 	      val size = (collage.data.dataBuffer.size / 4L);
@@ -194,41 +225,85 @@ class Collage {
 
 	     	 collage = adjCollage;
 	      }
+
+              val text = getTextAsImage(collage, caption, gaps, scale, null, Color.BLACK, font)
+
+              val textScale = 0.4
+
+		val widthToHeightRatio = text.height.toDouble()/text.width.toDouble()
+	      /* val heightToWidthRatio = text.width.toDouble()/text.height.toDouble() */
+              val tW = collage.width * textScale
+              val tH = max(collage.height * 0.2, tW * (widthToHeightRatio)).toInt()
+
+              /* Just a test */
+	      val cX = collage.width - tW.toInt() + gaps * 2
+	      val cY = collage.height - tH + gaps * 2
+	      val cg = collage.graphics as Graphics2D
+
+              cg.drawImage(text, cX, cY, collage.width, collage.height, 0, 0, text.width, text.height, null)
+              // cg.drawImage(text, cX, cY, collage.width, collage.height, 0, 0, text.width, text.height, null)
+
+	      cg.color = Color.BLACK
+
+	      /* This sort of disappear when the image is too big */
+	      cg.stroke = BasicStroke(2.5f)
+	      cg.drawRect(cX, cY, collage.width - cX, collage.height - cY)
+
+	      cg.dispose()
+              text.flush()
+
               return collage
           }
 
           private fun generateCollage(src : List<BufferedImage>, imageWidth : Int, imageHeight : Int,
                                       gaps : Int, columns : Int, adaptToImageDimensions : Boolean) : BufferedImage {
 	      var stitchImage : BufferedImage
-              val rows = ceil(src.size / columns.toDouble()).toInt()
 
-              val cols = if(src.size < columns) {
+              val finalColumns = if(src.size < columns) {
                   src.size
               } else {
                   columns
               }
 
+              val rows = ceil(src.size / finalColumns.toDouble()).toInt()
+
 	      if(adaptToImageDimensions) {
+		// The dimensions! the s*Height has borders already set
 		var stitchWidth = 0
-		var stitchHeight = 0
+		var stitchHeight = gaps * (rows + 1)
 
-		val rowMaxHeights = arrayOf<Int>(rows)
+		val rowMaxHeights = IntArray(rows) { 0 }
+		val columnsMaxWidth = IntArray(rows) { 0 }
 
-		for ( i in 0 until rows ) {
+		var highestRowWidth = 0
+		for (r in 0 until rows) {
 			var rowWidth = 0
 			var rowHighestHeight = 0
 
-			for(x in 0 until columns) {
-				val srcImg = src[rows * i + x]
-				rowWidth += srcImg.width + (gaps * 2)
+			for(x in 0 until (finalColumns + min(src.size - (r + 1) * finalColumns, 0))) {
+				val srcImg = src[finalColumns * r + x]
+				val arPortraitW = srcImg.height.toDouble()/srcImg.width
+				val arPortraitH = srcImg.width.toDouble()/srcImg.height
 
-				if(srcImg.height > rowHighestHeight) rowHighestHeight = srcImg.height
+				val arLandscapeW = srcImg.width.toDouble()/srcImg.height
+				val arLandscapeH = srcImg.height.toDouble()/srcImg.width
+
+				val isPortrait = srcImg.width < srcImg.height
+
+				val srcWidthAdjusted = (imageWidth * (if(isPortrait) arPortraitW else arLandscapeW).toDouble()).toInt()
+				val srcHeightAdjusted = (imageHeight * (if(isPortrait) arPortraitH else arLandscapeH).toDouble()).toInt()
+				rowWidth += srcWidthAdjusted + gaps
+
+				if(srcHeightAdjusted > rowHighestHeight) rowHighestHeight = srcHeightAdjusted
+				if(columnsMaxWidth[x] < srcWidthAdjusted) columnsMaxWidth[x] = srcWidthAdjusted
+
+				if(highestRowWidth < rowWidth) highestRowWidth = rowWidth
 			}
 
-			if(rowWidth > stitchWidth) stitchWidth = rowWidth
+			if(rowWidth > stitchWidth) stitchWidth = highestRowWidth + gaps
 
-			rowMaxHeights[i] = rowHighestHeight + gaps * 2
-			stitchHeight += rowMaxHeights[i]
+			rowMaxHeights[r] = rowHighestHeight
+			stitchHeight += rowMaxHeights[r]
 		}
 
 		stitchImage = BufferedImage(stitchWidth, stitchHeight, BufferedImage.TYPE_INT_ARGB)
@@ -242,44 +317,34 @@ class Collage {
 
 		/** Strive to center the rows and also I guess the images vertical wise **/
 		var index = 0
-		var currentY = 0
+		var currentY = gaps
 
 		for(y in 0 until rows) {
 			val rowHighestHeight = rowMaxHeights[y]
-			var rowMaxWidth = 0
+			var curX = 0
 
-			for(x in 0 until columns) {
-				rowMaxWidth += src[rows * y + x].width + (gaps * 2)
-			}
-
-
-			for(x in 0 until cols) {
-				if(index < src.size) {
+			for(x in 0 until finalColumns + min(src.size - (y + 1) * finalColumns, 0)) {
 					val srcImg = src[index]
 
-					val centerPadY = (rowHighestHeight - srcImg.height)/2 + gaps
+					val srcWidthAdjusted  = (imageWidth * (srcImg.width.toDouble()/srcImg.height)).toInt()
+					val srcHeightAdjusted = (imageHeight * (srcImg.height.toDouble()/srcImg.width)).toInt()
 
-					var curX = (stitchWidth - rowMaxWidth) / 2 + gaps * 2 + (gaps * x - gaps)
-					val imgY = (centerPadY + gaps) * y + gaps
+					var dstX = curX + (columnsMaxWidth[x] - srcWidthAdjusted)/2 + gaps// (stitchWidth - rowMaxWidth) / 2 + gaps * 2 + (gaps * x - gaps)
+					val padY = ((rowHighestHeight - srcHeightAdjusted)/2)
 
-					stitchGraphics.drawImage(srcImg, curX, imgY, null)
-
-					println("^curx: $curX, rowMaxWidth: $rowMaxWidth, rowHighestHeight: $rowHighestHeight, imgY: $imgY")
+					stitchGraphics.drawImage(srcImg, dstX, currentY + padY, srcWidthAdjusted, srcHeightAdjusted, null)
 				        stitchGraphics.stroke = BasicStroke(5f)
 				        stitchGraphics.color = Color.BLACK
-				        stitchGraphics.drawRect(curX, imgY, srcImg.width, srcImg.height)
-					/** There's one problem I have here, I have to make everything proportionate to make them
-					* appear uniform in size regardless of aspect ratio differences, I have to postpone this
-					* one, at least the foundation has been laid. */
+				        stitchGraphics.drawRect(dstX, currentY + padY, srcWidthAdjusted, srcHeightAdjusted)
 
-					curX += srcImg.width + (gaps * 2)
+					curX += dstX + srcWidthAdjusted
 					index++
-				}
 			}
-			currentY += rowHighestHeight
+
+			currentY += rowHighestHeight + gaps
 		}
 	      } else {
-		val stitchWidth = ((gaps + imageWidth) * cols) + gaps
+		val stitchWidth = ((gaps + imageWidth) * finalColumns) + gaps
 		val stitchHeight = ((gaps + imageHeight) * rows) + gaps
 
 		stitchImage = BufferedImage(stitchWidth, stitchHeight, BufferedImage.TYPE_INT_ARGB)
@@ -294,7 +359,7 @@ class Collage {
 		var index = 0
 		for(y in 0 until rows) {
 			val iY = y * (imageHeight + gaps) + gaps
-			for(x in 0 until cols) {
+			for(x in 0 until finalColumns) {
 			    val iX = x * (imageWidth + gaps) + gaps;
 
 			    if(index < src.size) {
@@ -329,7 +394,7 @@ class Collage {
 			}
 		}
               }
-		return stitchImage!!
+		return stitchImage
           }
 
           /* TODO: Figure out to make an effective font size
@@ -353,10 +418,10 @@ class Collage {
 
               val texts = text.split('\n')
 
-              val w = width + gaps * 2
-              val h = (height + gaps * 2).toInt()
+              val w = width + gaps * 3
+              val h = (height + gaps * 3).toInt()
 
-              val canvas = BufferedImage(w, h, BufferedImage.TYPE_4BYTE_ABGR)
+	      val canvas = BufferedImage(w, h, BufferedImage.TYPE_4BYTE_ABGR)
               val graphics = canvas.graphics as Graphics2D
 
               graphics.color = bg?: Color.WHITE
@@ -369,8 +434,12 @@ class Collage {
 
               texts.forEach { line ->
                   y += graphics.fontMetrics.getLineMetrics(line, graphics).height
-                  graphics.drawString(line, gaps, gaps + y.toInt())
+                  graphics.drawString(line, gaps, y.toInt())
               }
+
+	      graphics.color = Color.BLACK
+	      graphics.stroke = BasicStroke(5f)
+              graphics.drawRect(0, 0, w, h)
 
               return canvas
           }
@@ -393,6 +462,60 @@ class Collage {
 
               return longestLength
           }
+
+	  private fun cutStringToWidth(line : String, maxWidth : Int) : Array<String> {
+		/* println("cut_string_info: param: [$line],\n\tline.length: ${line.length},\n\tmax_width: ${maxWidth}") */
+		if(line.length > maxWidth) {
+			var lastSeperatorIndex = 0
+			var currentIndex = 0
+			/* TODO: Kinda questionable */
+			for(i in line) {
+				if(i == ' ' || i == '-' || i == ',' || i == '\t' ||
+					i == '\n' || currentIndex == line.length) {
+					if(currentIndex > maxWidth) {
+						val part_i =  line.substring(0, if(lastSeperatorIndex < 1) currentIndex - 1 else lastSeperatorIndex - 1)
+						val part_ii = line.substring(if(lastSeperatorIndex < 1) currentIndex + 1 else lastSeperatorIndex + 1, line.length)
+						/* println("seperator: [" + i + "],\n\tpart_i: [$part_i],\n\tpart_ii: [$part_ii]," +
+							"\n\tcurrentIndex: [$currentIndex],\n\tlastSeparator: [$lastSeperatorIndex]") */
+						if(part_ii.length > maxWidth) {
+							val cut = cutStringToWidth(part_ii, maxWidth)
+							var temp = arrayOfNulls<String>(cut.size + 1)
+							temp[0] = part_i
+							// println(cut.size)
+							for(idx in 0..cut.size - 1) {
+								// println(temp[idx + 1])
+								temp[idx + 1] = cut[idx]
+							}
+
+							/* Hacky fix :disappointed: */
+							return Array<String>(cut.size + 1) { it -> temp[it]!! }
+						} else {
+							return arrayOf<String>(part_i, part_ii)
+						}
+					}
+
+					lastSeperatorIndex = currentIndex
+				}
+				currentIndex++
+			}
+		}
+		return arrayOf<String>(line)
+	  }
+
+	  private fun appendLimitedTextToStringBuilder(string : String, buffer : StringBuilder) {
+		val split = string.split("\n")
+		      for(i in 0..split.size - 1) {
+			      val line = split[i]
+			      if(line.length > 0) {
+					val cutString = cutStringToWidth(line, MAX_CHAR_WIDTH)
+					for(x in 0..cutString.size - 1) {
+						buffer.append(cutString[x])
+						if(i < split.size - 1) buffer.append("\n")
+					}
+			      }
+
+		      }
+	  }
 
           private fun getTotalStringHeight(text : String, font : Font, fontRenderContext : FontRenderContext) : Float {
               var totalHeight = 0f
